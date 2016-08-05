@@ -1,14 +1,15 @@
 package top.zibin.luban;
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.media.ExifInterface;
+import android.os.Build;
 import android.support.annotation.NonNull;
 import android.util.Log;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -40,9 +41,12 @@ public class Luban {
     private OnCompressListener compressListener;
     private File mFile;
     private int gear = THIRD_GEAR;
+    private Context mContext;
+    private int mTargetSize;
 
-    Luban(File cacheDir) {
-        mCacheDir = cacheDir;
+    Luban(Context context) {
+        mCacheDir = Luban.getPhotoCacheDir(context);
+        mContext = context;
     }
 
     /**
@@ -81,8 +85,10 @@ public class Luban {
     }
 
     public static Luban get(Context context) {
-        if (INSTANCE == null) INSTANCE = new Luban(Luban.getPhotoCacheDir(context));
-        return INSTANCE;
+//        if (INSTANCE == null) INSTANCE = new Luban(context);
+//
+//        return INSTANCE;
+        return new Luban(context);
     }
 
     public Observable<File> asObservable() {
@@ -90,12 +96,7 @@ public class Luban {
             @Override
             public void call(Subscriber<? super File> subscriber) {
                 try {
-                    if (gear == FIRST_GEAR)
-                        subscriber.onNext(firstCompress(mFile));
-                    else if (gear == THIRD_GEAR)
-                        subscriber.onNext(thirdCompress(mFile.getAbsolutePath()));
-                    else
-                        subscriber.onError(new Exception("不支持的类型"));
+                    subscriber.onNext(compressTaskStart());
                     subscriber.onCompleted();
                 } catch (Exception e) {
                     subscriber.onError(e);
@@ -105,49 +106,73 @@ public class Luban {
         });
     }
 
-    /**
-     *
-     * @param image    the image should be compress
-     * @param targetSize   target Size
-     * @return    ByteArrayInputStream
-     * @throws IOException
-     */
-    public static ByteArrayInputStream compressImage(Bitmap image, int targetSize) throws IOException {
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    public File compressTaskStart() throws Exception {
 
-        image.compress(Bitmap.CompressFormat.JPEG, 100, baos);
-        int options = 100;
-        int j = 1;
-        while (baos.toByteArray().length / 1024 > targetSize) { // 和指定的大小进行比较
-            Log.e(TAG,"第" + j + "次压缩后:" + ",option:" + options + ",baos大小:" + baos.toByteArray().length / 1024 + "KB");
-            j++;
-            options -= 10;
-            baos.reset();
-            image.compress(Bitmap.CompressFormat.JPEG, options, baos);
-        }
-        ByteArrayInputStream bis = new ByteArrayInputStream(baos.toByteArray());
-//		Bitmap bitmap = BitmapFactory.decodeStream(bis, null, null); // 压缩后的数据转换成图片.
-        baos.close();
-//		bis.close();
-        return bis;
+        Bitmap pre_compress = pre_compress();
+
+        if (gear == FIRST_GEAR) {
+            return firstCompress(pre_compress);
+        } else if (gear == THIRD_GEAR)
+            return thirdCompress(pre_compress);
+        else
+            throw new Exception("不支持的类型");
     }
 
+
+    //开启混合压缩模式,先设备宽高比压一次,然后采用鲁班再压一次.
+    // Luban在压缩大图的时候效率很低, 所以我们预压一次, 加快压缩进度
+    public void superLaunch() {
+            pre_compress();
+            launch();
+    }
+
+    private Bitmap pre_compress()  {
+        Bitmap preloadBitmap = null;
+        try {
+            int deviceWidth = mContext.getResources().getDisplayMetrics().widthPixels;
+            int deviceHeight = mContext.getResources().getDisplayMetrics().heightPixels;
+
+            Log.e(TAG, "当前设备高:" + deviceHeight + ",当前设备宽:" + deviceWidth);
+            Log.e(TAG,"原始图片大小:" + mFile.length() / 1024 + "KB");
+
+            //设备宽高比
+            int deviceRatio = (int) ((deviceWidth * 1.0f) / deviceHeight + 0.5f);
+
+            preloadBitmap = preLoadCompress(mFile.getAbsolutePath(), deviceWidth, deviceHeight);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return preloadBitmap;
+    }
+
+
+    /**
+     * 最
+     *
+     * @param kb
+     * @return
+     */
+    public Luban maxAllowSize(int kb) {
+        mTargetSize = kb;
+        return this;
+    }
 
 
     /**
      * 传入想要图片的宽高,会自动根据缩放比进行一次缩放,生成缩放后的图片再进行质量压缩..(尝试替换质量压缩方式为LuBan的算法)
-     * @param desPath 压缩后图片保存的路径(包含文件名的完整路径)
+     *
      * @throws IOException
      */
-    public static void saveImage2SpecifiedQuality(String oriPath, String desPath, int bitmapMaxWidth, int bitmapMaxHeight)
+    public static Bitmap preLoadCompress(String oriPath, int bitmapMaxWidth, int bitmapMaxHeight)
             throws IOException {
 
         File file = new File(oriPath);
         long len = file.length();
         int mSize = (int) (len / 1024); // kb
 
-        Log.e(TAG,"压缩前:" + mSize + "KB");
+        Log.e(TAG, "压缩前:" + mSize + "KB");
 
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
@@ -156,7 +181,7 @@ public class Luban {
         int reqWidth = bitmapMaxWidth;
 
         int inSampleSize = calculateInSampleSizeByPowerOf2(options, reqWidth, reqHeight);
-        Log.e(TAG,"缩放比例:" + inSampleSize); // 1
+        Log.e(TAG, "缩放比例:" + inSampleSize); // 1
         options.inSampleSize = inSampleSize;
         options.inJustDecodeBounds = false;
         options.inPreferredConfig = Bitmap.Config.ARGB_8888;
@@ -164,10 +189,17 @@ public class Luban {
 
         Bitmap bitmap = BitmapFactory.decodeFile(oriPath, options);
 //		Bitmap compressImage;
+//        File imageFile = compressSize(desPath, bitmap);
+//        Log.e(TAG,"压缩后的文件大小:" + imageFile.length() / 1024 + "KB");
+        return bitmap;
+    }
+
+/*    @NonNull
+    private static File compressSize(String desPath, Bitmap bitmap) throws IOException {
         ByteArrayInputStream bis;
         bis = compressImage(bitmap, 250);
         // 将压缩后的bitmap保存到图片文件
-        Log.e(TAG,"文件路径:" + desPath);
+        Log.e(TAG, "文件路径:" + desPath);
         File imageFile = new File(desPath);
         if (imageFile.exists()) {
             imageFile.delete();
@@ -187,9 +219,8 @@ public class Luban {
         fos.flush();
         fos.close();
         bis.close();
-        Log.e(TAG,"压缩后的文件大小:" + imageFile.length() / 1024 + "KB");
-        bitmap.recycle();
-    }
+        return imageFile;
+    }*/
 
 
     /**
@@ -205,7 +236,7 @@ public class Luban {
         final int height = options.outHeight;
         final int width = options.outWidth;
 
-        Log.e(TAG,"原图高度:" + height + ",宽度:" + width);
+        Log.e(TAG, "原图高度:" + height + ",宽度:" + width);
 
         int inSampleSize = 1; // 9696 2332 height wid 1024 768
 
@@ -223,7 +254,7 @@ public class Luban {
 
         }
 
-        Log.e(TAG,"inSampleSize:" + inSampleSize);
+        Log.e(TAG, "inSampleSize:" + inSampleSize);
         return inSampleSize;
     }
 
@@ -234,7 +265,7 @@ public class Luban {
         if (compressListener != null) compressListener.onStart();
 
         // @formatter:off
-        Observable.just(mFile)
+/*        Observable.just(mFile)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .doOnError(new Action1<Throwable>() {
@@ -267,56 +298,60 @@ public class Luban {
                             Log.e("Luban","结束转换:" + System.currentTimeMillis());
                             if (compressListener != null) compressListener.onSuccess(file);
                         }
-                 });
+                 });*/
         // @formatter:on
 
-/*
-        if (gear == Luban.FIRST_GEAR)
-            Observable.just(firstCompress(mFile))
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .doOnError(new Action1<Throwable>() {
-                        @Override
-                        public void call(Throwable throwable) {
-                            if (compressListener != null) compressListener.onError(throwable);
-                        }
-                    })
-                    .onErrorResumeNext(Observable.<File>empty())
-                    .filter(new Func1<File, Boolean>() {
-                        @Override
-                        public Boolean call(File file) {
-                            return file != null;
-                        }
-                    })
-                    .subscribe(new Action1<File>() {
-                        @Override
-                        public void call(File file) {
-                            if (compressListener != null) compressListener.onSuccess(file);
-                        }
-                    });
-        else if (gear == Luban.THIRD_GEAR)
-            Observable.just(thirdCompress(mFile.getAbsolutePath()))
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .doOnError(new Action1<Throwable>() {
-                        @Override
-                        public void call(Throwable throwable) {
-                            if (compressListener != null) compressListener.onError(throwable);
-                        }
-                    })
-                    .onErrorResumeNext(Observable.<File>empty())
-                    .filter(new Func1<File, Boolean>() {
-                        @Override
-                        public Boolean call(File file) {
-                            return file != null;
-                        }
-                    })
-                    .subscribe(new Action1<File>() {
-                        @Override
-                        public void call(File file) {
-                            if (compressListener != null) compressListener.onSuccess(file);
-                        }
-                    });*/
+            //耗时操作.
+            Bitmap preloadBitmap  = pre_compress();
+
+            if (gear == Luban.FIRST_GEAR)
+                Observable.just(firstCompress(preloadBitmap))
+                        .subscribeOn(Schedulers.io())
+                        .observeOn(AndroidSchedulers.mainThread())
+                        .doOnError(new Action1<Throwable>() {
+                            @Override
+                            public void call(Throwable throwable) {
+                                if (compressListener != null) compressListener.onError(throwable);
+                            }
+                        })
+                        .onErrorResumeNext(Observable.<File>empty())
+                        .filter(new Func1<File, Boolean>() {
+                            @Override
+                            public Boolean call(File file) {
+                                return file != null;
+                            }
+                        })
+                        .subscribe(new Action1<File>() {
+                            @Override
+                            public void call(File file) {
+                                if (compressListener != null) compressListener.onSuccess(file);
+                            }
+                        });
+            else if (gear == Luban.THIRD_GEAR)
+                Observable.just(thirdCompress(preloadBitmap))
+                        .subscribeOn(Schedulers.io())
+                        .observeOn(AndroidSchedulers.mainThread())
+                        .doOnError(new Action1<Throwable>() {
+                            @Override
+                            public void call(Throwable throwable) {
+                                if (compressListener != null) compressListener.onError(throwable);
+                            }
+                        })
+                        .onErrorResumeNext(Observable.<File>empty())
+                        .filter(new Func1<File, Boolean>() {
+                            @Override
+                            public Boolean call(File file) {
+                                return file != null;
+                            }
+                        })
+                        .subscribe(new Action1<File>() {
+                            @Override
+                            public void call(File file) {
+                                if (compressListener != null) compressListener.onSuccess(file);
+                            }
+                        });
+
+
 
         return this;
     }
@@ -337,22 +372,17 @@ public class Luban {
         return this;
     }
 
-    public Luban putGear(@GearMode  int gear) {
+    public Luban putGear(
+            @GearMode
+            int gear) {
         this.gear = gear;
         return this;
     }
 
-//    public Observable<File> asObservable() {
-//        if (gear == FIRST_GEAR)
-//            return Observable.just(firstCompress(mFile));
-//        else if (gear == THIRD_GEAR)
-//            return Observable.just(thirdCompress(mFile.getAbsolutePath()));
-//        else return Observable.empty();
-//    }
 
     private File thirdCompress(
             @NonNull
-            String filePath) {
+            Bitmap pre_compress_bitmap) {
 
         String thumb;
         if (mTargetFile == null) {
@@ -364,16 +394,24 @@ public class Luban {
 
         double scale;
 
-        int angle = getImageSpinAngle(filePath);
-        int width = getImageSize(filePath)[0];
-        int height = getImageSize(filePath)[1];
+        int angle = getImageSpinAngle(mFile.getAbsolutePath());
+        int[] imageSize = getImageSize(mFile.getAbsolutePath());
+        int width = imageSize[0];
+        int height = imageSize[1];
+
+
         int thumbW = width % 2 == 1 ? width + 1 : width;
         int thumbH = height % 2 == 1 ? height + 1 : height;
 
+        //识别谁宽,谁高. 经过这套算数后,  一定是  宽< 高
         width = thumbW > thumbH ? thumbH : thumbW;
         height = thumbW > thumbH ? thumbW : thumbH;
 
+        // c的值一定 < 1
         double c = ((double) width / height);
+
+        Log.e(TAG, "宽:高 = " + c);
+
 
         if (c <= 1 && c > 0.5625) {
             if (height < 1664) {
@@ -410,17 +448,33 @@ public class Luban {
             scale = scale < 100 ? 100 : scale;
         }
 
-        return compress(filePath, thumb, thumbW, thumbH, angle, (long) scale);
+
+        if (mTargetSize != 0 && mTargetSize < scale) {
+            return compress(pre_compress_bitmap, thumb, thumbW, thumbH, angle, (long) mTargetSize);
+        } else {
+            return compress(pre_compress_bitmap, thumb, thumbW, thumbH, angle, (long) scale);
+        }
     }
+
+
+    @TargetApi(Build.VERSION_CODES.HONEYCOMB_MR1)
+    protected int sizeOf(Bitmap data) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB_MR1) {
+            return data.getRowBytes() * data.getHeight();
+        } else {
+            return data.getByteCount();
+        }
+    }
+
 
     private File firstCompress(
             @NonNull
-            File file) {
+            Bitmap pre_compress_bitmap) {
         int minSize = 60;
         int longSide = 720;
         int shortSide = 1280;
 
-        String filePath = file.getAbsolutePath();
+//        String filePath = file.getAbsolutePath();
 
         String thumbFilePath;
         if (mTargetFile == null) {
@@ -431,10 +485,11 @@ public class Luban {
 
 
         long size = 0;
-        long maxSize = file.length() / 5;
+//        long maxSize = file.length() / 5;
+        long maxSize = sizeOf(pre_compress_bitmap);
 
-        int angle = getImageSpinAngle(filePath);
-        int[] imgSize = getImageSize(filePath);
+        int angle = getImageSpinAngle(mFile.getAbsolutePath());
+        int[] imgSize = getImageSize(mFile.getAbsolutePath());
         int width = 0, height = 0;
         if (imgSize[0] <= imgSize[1]) {
             double scale = (double) imgSize[0] / (double) imgSize[1];
@@ -460,8 +515,9 @@ public class Luban {
             }
         }
 
-        return compress(filePath, thumbFilePath, width, height, angle, size);
+        return compress(pre_compress_bitmap, thumbFilePath, width, height, angle, size);
     }
+
 
     /**
      * obtain the image's width and height
@@ -485,18 +541,17 @@ public class Luban {
     /**
      * obtain the thumbnail that specify the size
      *
-     * @param imagePath the target image path
-     * @param width     the width of thumbnail
-     * @param height    the height of thumbnail
+     * @param width  the width of thumbnail
+     * @param height the height of thumbnail
      * @return {@link Bitmap}
      */
-    private Bitmap compress(String imagePath, int width, int height) {
+    private Bitmap compress(Bitmap pre_compress_bitmap, int width, int height) {
         BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(imagePath, options);
+//        options.inJustDecodeBounds = true;
+//        BitmapFactory.decodeFile(imagePath, options);
 
-        int outH = options.outHeight;
-        int outW = options.outWidth;
+        int outH = pre_compress_bitmap.getHeight();
+        int outW = pre_compress_bitmap.getWidth();
         int inSampleSize = 1;
 
         if (outH > height || outW > width) {
@@ -524,7 +579,10 @@ public class Luban {
         }
         options.inJustDecodeBounds = false;
 
-        return BitmapFactory.decodeFile(imagePath, options);
+
+        Bitmap scaledBitmap = Bitmap.createScaledBitmap(pre_compress_bitmap, width, height, false);
+        return scaledBitmap;
+//        return BitmapFactory.decodeFile(imagePath, options);
     }
 
     /**
@@ -558,15 +616,14 @@ public class Luban {
      * 指定参数压缩图片
      * create the thumbnail with the true rotate angle
      *
-     * @param largeImagePath the big image path
-     * @param thumbFilePath  the thumbnail path
-     * @param width          width of thumbnail
-     * @param height         height of thumbnail
-     * @param angle          rotation angle of thumbnail
-     * @param size           the file size of image
+     * @param thumbFilePath the thumbnail path
+     * @param width         width of thumbnail
+     * @param height        height of thumbnail
+     * @param angle         rotation angle of thumbnail
+     * @param size          the file size of image
      */
-    private File compress(String largeImagePath, String thumbFilePath, int width, int height, int angle, long size) {
-        Bitmap thbBitmap = compress(largeImagePath, width, height);
+    private File compress(Bitmap pre_compress_bitmap, String thumbFilePath, int width, int height, int angle, long size) {
+        Bitmap thbBitmap = compress(pre_compress_bitmap, width, height);
 
         thbBitmap = rotatingImage(angle, thbBitmap);
 
@@ -593,14 +650,14 @@ public class Luban {
      * 保存图片到指定路径
      * Save image with specified size
      *
-     * @param filePath the image file save path 储存路径
+     * @param targetPath the image file save path 储存路径
      * @param bitmap   the image what be save   目标图片
      * @param size     the file size of image   期望大小
      */
-    private File saveImage(String filePath, Bitmap bitmap, long size) {
+    private File saveImage(String targetPath, Bitmap bitmap, long size) {
         checkNotNull(bitmap, TAG + "bitmap cannot be null");
 
-        File result = new File(filePath.substring(0, filePath.lastIndexOf("/")));
+        File result = new File(targetPath.substring(0, targetPath.lastIndexOf("/")));
 
         if (!result.exists() && !result.mkdirs()) return null;
 
@@ -608,21 +665,26 @@ public class Luban {
         int options = 100;
         bitmap.compress(Bitmap.CompressFormat.JPEG, options, stream);
 
+        int j = 1;
+        //循环压缩到指定大小..
         while (stream.toByteArray().length / 1024 > size) {
+            Log.e(TAG, "第" + j + "次压缩后:" + ",option:" + options + ",baos大小:" + stream.toByteArray().length / 1024 + "KB");
+            j++;
             stream.reset();
-            options -= 6;
+            options -= 10;
             bitmap.compress(Bitmap.CompressFormat.JPEG, options, stream);
         }
 
         try {
-            FileOutputStream fos = new FileOutputStream(filePath);
+            FileOutputStream fos = new FileOutputStream(targetPath);
             fos.write(stream.toByteArray());
             fos.flush();
             fos.close();
+            bitmap.recycle();
         } catch (IOException e) {
             e.printStackTrace();
         }
 
-        return new File(filePath);
+        return new File(targetPath);
     }
 }

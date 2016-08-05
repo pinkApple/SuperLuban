@@ -46,6 +46,10 @@ public class MainActivity extends AppCompatActivity {
     private TextView tv_mode1;
     private TextView tv_mode2;
 
+    private long mStartTime;
+    private long mEndTime;
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -121,6 +125,7 @@ public class MainActivity extends AppCompatActivity {
         Luban.get(this)
                 .from(file_ori)
                 .to(destFile)
+                .maxAllowSize(255)
                 .putGear(mode)
                 .asObservable()
                 .subscribeOn(Schedulers.io())
@@ -183,8 +188,11 @@ public class MainActivity extends AppCompatActivity {
                 fileSize.setText(imgFile.length() / 1024 + "k");
                 imageSize.setText(Luban.get(this).getImageSize(imgFile.getPath())[0] + " * " + Luban.get(this).getImageSize(imgFile.getPath())[1]);
 
+
+                mStartTime = System.currentTimeMillis();
+
                 //测试区别
-                compressWithRx(new File(photos.get(0)),Luban.FIRST_GEAR);
+//                compressWithRx(new File(photos.get(0)),Luban.FIRST_GEAR);
                 compressWithRx(new File(photos.get(0)),Luban.THIRD_GEAR);
 
 //                compressWithLs(new File(photos.get(0)), Luban.FIRST_GEAR);
