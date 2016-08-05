@@ -124,10 +124,10 @@ public class MainActivity extends AppCompatActivity {
                                 final int mode) {
         Luban.get(this)
                 .from(file_ori)
-                .to(destFile)
-                .maxAllowSize(255)
+                .to(destFile)  // 目标文件地址,可以不设置,会采用项目cache目录
+                .maxAllowSize(255) //允许图片的最大尺寸
                 .putGear(mode)
-                .asObservable()
+                .asObservable()   //异步压缩
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .doOnError(new Action1<Throwable>() {

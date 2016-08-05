@@ -53,31 +53,34 @@ Luban内部采用io线程进行图片压缩，外部调用只需设置好结果�
 ###RxJava方式
 RxJava 调用方式请自行随意控制线程
     
-    Luban.get(this)
-            .from(File)
-            .to(targetFile)
-            .putGear(Luban.THIRD_GEAR)
-            .asObservable()
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .doOnError(new Action1<Throwable>() {
-                @Override
-                public void call(Throwable throwable) {
-                    throwable.printStackTrace();
-                }
-            })
-            .onErrorResumeNext(new Func1<Throwable, Observable<? extends File>>() {
-                @Override
-                public Observable<? extends File> call(Throwable throwable) {
-                    return Observable.empty();
-                }
-            })
-            .subscribe(new Action1<File>() {
-                @Override
-                public void call(File file) {
-                    //TODO 压缩成功后调用，返回压缩后的图片文件
-                }
-            });
+            Luban.get(this)
+                    .from(file_ori)
+                    .to(destFile)  // 目标文件地址,可以不设置,会采用项目cache目录
+                    .maxAllowSize(255) //允许图片的最大尺寸
+                    .putGear(mode)
+                    .asObservable()   //异步压缩
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .doOnError(new Action1<Throwable>() {
+                        @Override
+                        public void call(Throwable throwable) {
+                            throwable.printStackTrace();
+                        }
+                    })
+                    .onErrorResumeNext(new Func1<Throwable, Observable<? extends File>>() {
+                        @Override
+                        public Observable<? extends File> call(Throwable throwable) {
+                            return Observable.empty();
+                        }
+                    })
+                    .subscribe(new Action1<File>() {
+                        @Override
+                        public void call(File file) {
+                           //压缩成功后,反悔压缩后的文件.
+
+                        }
+                    });
+        }
 
 #License
 
