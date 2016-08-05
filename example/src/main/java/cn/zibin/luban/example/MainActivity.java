@@ -1,4 +1,4 @@
-package top.zibin.luban.example;
+package cn.zibin.luban.example;
 
 import android.content.Intent;
 import android.os.Bundle;
@@ -12,8 +12,6 @@ import android.widget.TextView;
 
 import com.bumptech.glide.Glide;
 
-import org.w3c.dom.Text;
-
 import java.io.File;
 import java.util.ArrayList;
 
@@ -23,9 +21,9 @@ import rx.android.schedulers.AndroidSchedulers;
 import rx.functions.Action1;
 import rx.functions.Func1;
 import rx.schedulers.Schedulers;
-import top.zibin.luban.GearMode;
-import top.zibin.luban.Luban;
-import top.zibin.luban.OnCompressListener;
+import cn.zibin.luban.GearMode;
+import cn.zibin.luban.Luban;
+import cn.zibin.luban.OnCompressListener;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -154,6 +152,12 @@ public class MainActivity extends AppCompatActivity {
     private void showResult(File file,
                             @GearMode
                             int mode, File file_ori) {
+
+
+        mEndTime = System.currentTimeMillis();
+
+        Log.e("xxxxx","总共消耗时间:" + (mEndTime - mStartTime) / 1000 + "秒");
+
         switch (mode) {
 
             case Luban.FIRST_GEAR:

@@ -1,4 +1,4 @@
-package top.zibin.luban;
+package cn.zibin.luban.example;
 
 import org.junit.Test;
 

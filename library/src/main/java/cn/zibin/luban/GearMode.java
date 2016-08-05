@@ -1,4 +1,4 @@
-package top.zibin.luban;
+package cn.zibin.luban;
 
 import android.support.annotation.IntDef;
 

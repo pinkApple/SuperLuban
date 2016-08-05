@@ -1,4 +1,4 @@
-package top.zibin.luban.example;
+package cn.zibin.luban.example;
 
 import android.annotation.TargetApi;
 import android.content.ContentUris;

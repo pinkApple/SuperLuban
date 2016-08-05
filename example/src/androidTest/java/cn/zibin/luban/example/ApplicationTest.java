@@ -1,4 +1,4 @@
-package top.zibin.luban.example;
+package cn.zibin.luban.example;
 
 import android.app.Application;
 import android.test.ApplicationTestCase;

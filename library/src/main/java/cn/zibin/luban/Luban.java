@@ -1,4 +1,4 @@
-package top.zibin.luban;
+package cn.zibin.luban;
 
 import android.annotation.TargetApi;
 import android.content.Context;
@@ -23,7 +23,7 @@ import rx.functions.Action1;
 import rx.functions.Func1;
 import rx.schedulers.Schedulers;
 
-import static top.zibin.luban.Preconditions.checkNotNull;
+import static cn.zibin.luban.Preconditions.checkNotNull;
 
 public class Luban {
 
